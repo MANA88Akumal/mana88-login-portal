@@ -36,74 +36,34 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let mounted = true
-
-    async function init() {
-      // Check for hash params (implicit flow) or query params (PKCE)
-      const hashParams = new URLSearchParams(window.location.hash.substring(1))
-      const queryParams = new URLSearchParams(window.location.search)
-      
-      const accessToken = hashParams.get('access_token')
-      const refreshToken = hashParams.get('refresh_token')
-      const code = queryParams.get('code')
-
-      if (accessToken && refreshToken) {
-        console.log('Setting session from hash tokens...')
-        const { data, error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken
-        })
-        if (error) {
-          console.error('Error setting session:', error)
-        } else {
-          console.log('Session set successfully:', data.user?.email)
-          window.history.replaceState({}, '', window.location.pathname)
-        }
-      } else if (code) {
-        console.log('Exchanging code for session...')
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) {
-          console.error('Error exchanging code:', error)
-        } else {
-          console.log('Session established:', data.user?.email)
-          window.history.replaceState({}, '', window.location.pathname)
-        }
-      }
-
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log('Final session:', session?.user?.email || 'none')
-      
-      if (mounted) {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await fetchProfile(session.user.id)
-        } else {
-          setLoading(false)
-        }
-      }
-    }
-
-    init()
-
+    // Let Supabase handle everything via onAuthStateChange
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth event:', event)
-        if (mounted) {
-          setUser(session?.user ?? null)
-          if (session?.user) {
-            await fetchProfile(session.user.id)
-          } else {
-            setProfile(null)
-            setLoading(false)
+        console.log('Auth event:', event, session?.user?.email)
+        
+        setUser(session?.user ?? null)
+        
+        if (session?.user) {
+          // Clear URL params after successful auth
+          if (window.location.hash || window.location.search.includes('code=')) {
+            window.history.replaceState({}, '', window.location.pathname)
           }
+          await fetchProfile(session.user.id)
+        } else {
+          setProfile(null)
+          setLoading(false)
         }
       }
     )
 
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        setLoading(false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   async function fetchProfile(userId) {
@@ -145,8 +105,7 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
-        skipBrowserRedirect: false
+        redirectTo: window.location.origin
       }
     })
     if (error) throw error
