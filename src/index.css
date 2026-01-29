@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Gradient background */
+.bg-mana-gradient {
+  background: linear-gradient(135deg, #166534 0%, #15803d 50%, #22c55e 100%);
+}
+
+/* Card hover effect */
+.app-card {
+  @apply bg-white rounded-2xl p-8 shadow-lg transition-all duration-300 cursor-pointer;
+}
+
+.app-card:hover {
+  @apply shadow-2xl -translate-y-2;
+}
+
+/* Loading spinner */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
