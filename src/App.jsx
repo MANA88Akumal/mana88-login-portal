@@ -9,7 +9,7 @@ function ProtectedRoute({ children }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-mana-gradient flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full spinner" />
+        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full spinner"></div>
       </div>
     )
   }
@@ -22,33 +22,21 @@ function ProtectedRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { user, loading, getAccessibleSystems } = useAuth()
+  const { user, loading } = useAuth()
   
-  if (loading) {
+  // Check if we have auth callback params - don't redirect yet
+  const hasAuthParams = window.location.hash.includes('access_token') || 
+                        window.location.search.includes('code=')
+  
+  if (loading || hasAuthParams) {
     return (
       <div className="min-h-screen bg-mana-gradient flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full spinner" />
+        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full spinner"></div>
       </div>
     )
   }
   
-  // If logged in, redirect to app selector or single app
   if (user) {
-    const systems = getAccessibleSystems()
-    
-    if (systems.length === 1) {
-      // Auto-redirect to single system
-      window.location.href = systems[0].url
-      return (
-        <div className="min-h-screen bg-mana-gradient flex items-center justify-center">
-          <div className="text-center text-white">
-            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full spinner mx-auto mb-4" />
-            <p>Redirecting to {systems[0].name}...</p>
-          </div>
-        </div>
-      )
-    }
-    
     return <Navigate to="/" replace />
   }
   
