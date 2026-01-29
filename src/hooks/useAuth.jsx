@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
 
-// System definitions
 export const SYSTEMS = {
   cms: {
     id: 'cms',
@@ -12,7 +11,6 @@ export const SYSTEMS = {
     url: 'https://cms.manaakumal.com',
     icon: 'ClipboardList',
     color: 'bg-emerald-500',
-    roles: ['admin', 'sales', 'finance']
   },
   investors: {
     id: 'investors',
@@ -21,7 +19,6 @@ export const SYSTEMS = {
     url: 'https://investors.manaakumal.com',
     icon: 'TrendingUp',
     color: 'bg-blue-500',
-    roles: ['admin', 'investor']
   },
   cash: {
     id: 'cash',
@@ -30,7 +27,6 @@ export const SYSTEMS = {
     url: 'https://cash.manaakumal.com',
     icon: 'Wallet',
     color: 'bg-amber-500',
-    roles: ['admin', 'finance']
   }
 }
 
@@ -40,46 +36,60 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Check for auth tokens in URL hash (OAuth callback)
-    const hashParams = new URLSearchParams(window.location.hash.substring(1))
-    const accessToken = hashParams.get('access_token')
-    
-    if (accessToken) {
-      console.log('Found access token in URL, processing...')
+    let mounted = true
+
+    async function init() {
+      // Handle OAuth callback - check for code in URL params (PKCE flow)
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      
+      if (code) {
+        console.log('Found auth code, exchanging...')
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) {
+          console.error('Error exchanging code:', error)
+        } else {
+          console.log('Session established:', data.user?.email)
+          // Clean up URL
+          window.history.replaceState({}, '', window.location.pathname)
+        }
+      }
+
+      // Get session
+      const { data: { session } } = await supabase.auth.getSession()
+      console.log('Session check:', session ? session.user.email : 'none')
+      
+      if (mounted) {
+        setUser(session?.user ?? null)
+        if (session?.user) {
+          await fetchProfile(session.user.id)
+        } else {
+          setLoading(false)
+        }
+      }
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session:', session ? 'found' : 'none')
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      } else {
-        setLoading(false)
-      }
-    })
+    init()
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event, session?.user?.email)
-        setUser(session?.user ?? null)
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          if (window.location.hash) {
-            window.history.replaceState(null, '', window.location.pathname)
+        if (mounted) {
+          setUser(session?.user ?? null)
+          if (session?.user) {
+            await fetchProfile(session.user.id)
+          } else {
+            setProfile(null)
+            setLoading(false)
           }
-          await fetchProfile(session.user.id)
-        } else if (event === 'SIGNED_OUT') {
-          setProfile(null)
-          setLoading(false)
-        } else if (!session) {
-          setLoading(false)
         }
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function fetchProfile(userId) {
@@ -126,13 +136,10 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithGoogle() {
-    const redirectTo = window.location.origin
-    console.log('Signing in with Google, redirect to:', redirectTo)
-    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: redirectTo
+        redirectTo: window.location.origin
       }
     })
     if (error) throw error
@@ -146,24 +153,17 @@ export function AuthProvider({ children }) {
 
   function getAccessibleSystems() {
     if (!profile?.system_access) return []
-    
     return Object.entries(profile.system_access)
-      .filter(([_, access]) => access && (access === true || access.enabled))
+      .filter(([_, access]) => access === true || access?.enabled)
       .map(([systemId]) => SYSTEMS[systemId])
       .filter(Boolean)
   }
 
-  const value = {
-    user,
-    profile,
-    loading,
-    signInWithGoogle,
-    signOut,
-    getAccessibleSystems,
-    SYSTEMS
-  }
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, profile, loading, signInWithGoogle, signOut, getAccessibleSystems, SYSTEMS }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {
