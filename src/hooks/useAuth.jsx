@@ -39,25 +39,39 @@ export function AuthProvider({ children }) {
     let mounted = true
 
     async function init() {
-      // Handle OAuth callback - check for code in URL params (PKCE flow)
-      const params = new URLSearchParams(window.location.search)
-      const code = params.get('code')
+      // Check for hash params (implicit flow) or query params (PKCE)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const queryParams = new URLSearchParams(window.location.search)
       
-      if (code) {
-        console.log('Found auth code, exchanging...')
+      const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
+      const code = queryParams.get('code')
+
+      if (accessToken && refreshToken) {
+        console.log('Setting session from hash tokens...')
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        })
+        if (error) {
+          console.error('Error setting session:', error)
+        } else {
+          console.log('Session set successfully:', data.user?.email)
+          window.history.replaceState({}, '', window.location.pathname)
+        }
+      } else if (code) {
+        console.log('Exchanging code for session...')
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
         if (error) {
           console.error('Error exchanging code:', error)
         } else {
           console.log('Session established:', data.user?.email)
-          // Clean up URL
           window.history.replaceState({}, '', window.location.pathname)
         }
       }
 
-      // Get session
       const { data: { session } } = await supabase.auth.getSession()
-      console.log('Session check:', session ? session.user.email : 'none')
+      console.log('Final session:', session?.user?.email || 'none')
       
       if (mounted) {
         setUser(session?.user ?? null)
@@ -73,7 +87,7 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth event:', event, session?.user?.email)
+        console.log('Auth event:', event)
         if (mounted) {
           setUser(session?.user ?? null)
           if (session?.user) {
@@ -100,32 +114,24 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .single()
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          const { data: userData } = await supabase.auth.getUser()
-          const newProfile = {
-            id: userId,
-            email: userData.user?.email,
-            full_name: userData.user?.user_metadata?.full_name,
-            avatar_url: userData.user?.user_metadata?.avatar_url,
-            system_access: { cms: true, investors: true, cash: true }
-          }
-          
-          const { data: created, error: createError } = await supabase
-            .from('profiles')
-            .insert(newProfile)
-            .select()
-            .single()
-            
-          if (!createError) {
-            setProfile(created)
-          } else {
-            console.error('Error creating profile:', createError)
-          }
-        } else {
-          console.error('Error fetching profile:', error)
+      if (error && error.code === 'PGRST116') {
+        const { data: userData } = await supabase.auth.getUser()
+        const newProfile = {
+          id: userId,
+          email: userData.user?.email,
+          full_name: userData.user?.user_metadata?.full_name,
+          avatar_url: userData.user?.user_metadata?.avatar_url,
+          system_access: { cms: true, investors: true, cash: true }
         }
-      } else {
+        
+        const { data: created } = await supabase
+          .from('profiles')
+          .insert(newProfile)
+          .select()
+          .single()
+          
+        if (created) setProfile(created)
+      } else if (data) {
         setProfile(data)
       }
     } catch (err) {
@@ -139,7 +145,8 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: window.location.origin,
+        skipBrowserRedirect: false
       }
     })
     if (error) throw error
