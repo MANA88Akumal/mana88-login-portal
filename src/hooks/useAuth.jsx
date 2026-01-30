@@ -32,74 +32,35 @@ export const SYSTEMS = {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Let Supabase handle everything via onAuthStateChange
+    let mounted = true
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (mounted) {
+        setUser(session?.user ?? null)
+        setLoading(false)
+      }
+    })
+
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event, session?.user?.email)
-        
-        setUser(session?.user ?? null)
-        
-        if (session?.user) {
-          // Clear URL params after successful auth
-          if (window.location.hash || window.location.search.includes('code=')) {
-            window.history.replaceState({}, '', window.location.pathname)
-          }
-          await fetchProfile(session.user.id)
-        } else {
-          setProfile(null)
+        if (mounted) {
+          setUser(session?.user ?? null)
           setLoading(false)
         }
       }
     )
 
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        setLoading(false)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  async function fetchProfile(userId) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-
-      if (error && error.code === 'PGRST116') {
-        const { data: userData } = await supabase.auth.getUser()
-        const newProfile = {
-          id: userId,
-          email: userData.user?.email,
-          full_name: userData.user?.user_metadata?.full_name,
-          avatar_url: userData.user?.user_metadata?.avatar_url,
-          system_access: { cms: true, investors: true, cash: true }
-        }
-        
-        const { data: created } = await supabase
-          .from('profiles')
-          .insert(newProfile)
-          .select()
-          .single()
-          
-        if (created) setProfile(created)
-      } else if (data) {
-        setProfile(data)
-      }
-    } catch (err) {
-      console.error('Error in fetchProfile:', err)
-    } finally {
-      setLoading(false)
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
     }
-  }
+  }, [])
 
   async function signInWithGoogle() {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -114,19 +75,16 @@ export function AuthProvider({ children }) {
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
-    setProfile(null)
   }
 
   function getAccessibleSystems() {
-    if (!profile?.system_access) return []
-    return Object.entries(profile.system_access)
-      .filter(([_, access]) => access === true || access?.enabled)
-      .map(([systemId]) => SYSTEMS[systemId])
-      .filter(Boolean)
+    // For now, give access to all systems
+    // Later we can add profile-based filtering
+    return Object.values(SYSTEMS)
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signInWithGoogle, signOut, getAccessibleSystems, SYSTEMS }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut, getAccessibleSystems, SYSTEMS }}>
       {children}
     </AuthContext.Provider>
   )
