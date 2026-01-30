@@ -33,40 +33,63 @@ export const SYSTEMS = {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [returnTo, setReturnTo] = useState(null)
 
   useEffect(() => {
-    let mounted = true
+    // Check for returnTo parameter
+    const params = new URLSearchParams(window.location.search)
+    const returnUrl = params.get('returnTo')
+    if (returnUrl) {
+      setReturnTo(decodeURIComponent(returnUrl))
+    }
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (mounted) {
-        setUser(session?.user ?? null)
-        setLoading(false)
+      if (session) {
+        setUser(session.user)
+        // If we have a returnTo and user is logged in, redirect with tokens
+        if (returnUrl) {
+          const decoded = decodeURIComponent(returnUrl)
+          const redirectUrl = `${decoded}#access_token=${session.access_token}&refresh_token=${session.refresh_token}&token_type=bearer`
+          window.location.href = redirectUrl
+          return
+        }
       }
+      setLoading(false)
     })
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event, session?.user?.email)
-        if (mounted) {
-          setUser(session?.user ?? null)
-          setLoading(false)
+        if (session) {
+          setUser(session.user)
+          // Check if we need to redirect back
+          const params = new URLSearchParams(window.location.search)
+          const returnUrl = params.get('returnTo')
+          if (returnUrl && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+            const decoded = decodeURIComponent(returnUrl)
+            const redirectUrl = `${decoded}#access_token=${session.access_token}&refresh_token=${session.refresh_token}&token_type=bearer`
+            window.location.href = redirectUrl
+            return
+          }
         }
+        setLoading(false)
       }
     )
 
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   async function signInWithGoogle() {
+    const params = new URLSearchParams(window.location.search)
+    const returnUrl = params.get('returnTo')
+    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: returnUrl 
+          ? `${window.location.origin}?returnTo=${returnUrl}`
+          : window.location.origin
       }
     })
     if (error) throw error
@@ -78,13 +101,11 @@ export function AuthProvider({ children }) {
   }
 
   function getAccessibleSystems() {
-    // For now, give access to all systems
-    // Later we can add profile-based filtering
     return Object.values(SYSTEMS)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut, getAccessibleSystems, SYSTEMS }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut, getAccessibleSystems, SYSTEMS, returnTo }}>
       {children}
     </AuthContext.Provider>
   )
