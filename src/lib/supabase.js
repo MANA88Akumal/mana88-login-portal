@@ -11,3 +11,34 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce'
   }
 })
+
+// Shared cookie helpers
+export function setSharedAuthCookie(session) {
+  if (session) {
+    const data = JSON.stringify({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at
+    })
+    document.cookie = `mana88_session=${encodeURIComponent(data)}; path=/; domain=.manaakumal.com; max-age=${60*60*24*30}; secure; samesite=lax`
+  }
+}
+
+export function clearSharedAuthCookie() {
+  document.cookie = `mana88_session=; path=/; domain=.manaakumal.com; max-age=0; secure; samesite=lax`
+}
+
+export function getSharedAuthCookie() {
+  const cookies = document.cookie.split(';')
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=')
+    if (name === 'mana88_session' && value) {
+      try {
+        return JSON.parse(decodeURIComponent(value))
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
